@@ -5,7 +5,7 @@
 # ============================================
 
 # Stage 1: Minificar assets
-FROM node:22-alpine3.20 AS builder
+FROM node:18-bullseye AS builder
 
 WORKDIR /build
 
@@ -13,8 +13,7 @@ WORKDIR /build
 COPY frontend/package*.json ./
 
 # Instalar apenas dependencias de build
-RUN npm install --no-audit --no-fund \
-    && npm cache clean --force
+RUN npm install --verbose --no-audit --no-fund
 
 # Copiar arquivos HTML
 COPY frontend/frontend_complete.html ./
