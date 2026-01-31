@@ -1,86 +1,21 @@
-# ============================================
-# DOCKERIGNORE - Ajustado para frontend build
-# ============================================
+# Ignorar tudo por padrão
+*
 
-# Git
+# Permitir arquivos essenciais do build
+!Dockerfile.frontend.minified
+!package.json
+!package-lock.json
+!frontend_complete.html
+
+# Permitir configs do nginx
+!nginx/
+!nginx/**
+
+# Ignorar artefatos locais desnecessários
+node_modules
+dist
 .git
 .gitignore
-.gitattributes
-.github
-
-# Documentação
-*.md
-LICENSE
-docs/
-
-# Ambiente e segredos
 .env
 .env.*
-!.env.example
-*.pem
-*.key
-*.crt
-secrets/
-
-# Logs
-*.log
-logs/
-
-# Dependências locais (NUNCA copiar node_modules)
-node_modules/
-vendor/
-__pycache__/
-.venv/
-venv/
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-Thumbs.db
-
-# Docker
-docker-compose.override.yml
-docker-compose.local.yml
-Dockerfile.*
-!Dockerfile.frontend.minified
-
-# Backups
-backups/
-*.backup
-*.bak
-*.sql.gz
-*.tar.gz
-
-# Testes
-tests/
-test/
-coverage/
-.nyc_output/
-
-# Build artifacts (backend apenas)
-dist/
-tmp/
-temp/
-
-# n8n
-n8n_*.json
-n8n/
-
-# Scripts
-scripts/
-
-# PostgreSQL
-postgres/
-
-# ============================================
-# 🔥 EXCEÇÕES EXPLÍCITAS PARA O FRONTEND
-# ============================================
-
-!frontend/
-!frontend/**
-!frontend/package.json
-!frontend/package-lock.json
+README.md
