@@ -10,7 +10,7 @@ FROM node:22-alpine3.20 AS builder
 WORKDIR /build
 
 # Copiar apenas package.json para cache de dependencias
-COPY package.json .
+COPY frontend/package*.json ./
 
 # Instalar apenas dependencias de build
 RUN npm install --only=dev --no-audit --no-fund \
