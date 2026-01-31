@@ -17,8 +17,8 @@ RUN npm install --only=dev --no-audit --no-fund \
     && npm cache clean --force
 
 # Copiar arquivos HTML
-COPY frontend_complete.html ./
-COPY test_frontend.html ./
+COPY frontend/frontend_complete.html ./
+COPY frontend/test_frontend.html ./
 
 # Minificar HTML (inline CSS/JS inclusos)
 RUN npx html-minifier-terser \
