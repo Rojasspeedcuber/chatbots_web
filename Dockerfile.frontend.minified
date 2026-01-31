@@ -13,7 +13,7 @@ WORKDIR /build
 COPY frontend/package*.json ./
 
 # Instalar apenas dependencias de build
-RUN npm install --only=dev --no-audit --no-fund \
+RUN npm install --no-audit --no-fund \
     && npm cache clean --force
 
 # Copiar arquivos HTML
