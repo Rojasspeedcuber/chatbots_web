@@ -15,7 +15,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 # Copia o HTML principal
-COPY frontend_complete.html .
+COPY frontend/frontend_complete.html .
 
 # Executa minificação conforme script definido no package.json
 RUN npm run minify
