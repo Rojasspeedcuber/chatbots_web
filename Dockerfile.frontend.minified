@@ -13,7 +13,9 @@ WORKDIR /build
 COPY frontend/package*.json ./
 
 # Instalar apenas dependencias de build
-RUN npm install --verbose --no-audit --no-fund
+RUN npm install --no-audit --no-fund || \
+    (echo "===== NPM LOGS =====" && ls -la /root/.npm/_logs && cat /root/.npm/_logs/* && exit 1)
+
 
 # Copiar arquivos HTML
 COPY frontend/frontend_complete.html ./
