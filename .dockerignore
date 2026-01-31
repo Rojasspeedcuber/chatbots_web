@@ -1,5 +1,5 @@
 # ============================================
-# DOCKERIGNORE - Otimizado para builds rapidos
+# DOCKERIGNORE - Ajustado para frontend build
 # ============================================
 
 # Git
@@ -8,7 +8,7 @@
 .gitattributes
 .github
 
-# Documentacao (nao necessaria na imagem)
+# Documentação
 *.md
 LICENSE
 docs/
@@ -26,14 +26,14 @@ secrets/
 *.log
 logs/
 
-# Dependencias locais
+# Dependências locais (NUNCA copiar node_modules)
 node_modules/
 vendor/
 __pycache__/
 .venv/
 venv/
 
-# IDE e editores
+# IDEs
 .vscode/
 .idea/
 *.swp
@@ -42,11 +42,11 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Docker (evitar loop)
+# Docker
 docker-compose.override.yml
 docker-compose.local.yml
 Dockerfile.*
-!Dockerfile.frontend
+!Dockerfile.frontend.minified
 
 # Backups
 backups/
@@ -58,22 +58,29 @@ backups/
 # Testes
 tests/
 test/
-*.test.*
 coverage/
 .nyc_output/
 
-# Build artifacts
+# Build artifacts (backend apenas)
 dist/
-build/
 tmp/
 temp/
 
-# Workflows n8n (montados via volume)
+# n8n
 n8n_*.json
 n8n/
 
-# Scripts (nao necessarios na imagem)
+# Scripts
 scripts/
 
-# PostgreSQL init (montado via volume)
+# PostgreSQL
 postgres/
+
+# ============================================
+# 🔥 EXCEÇÕES EXPLÍCITAS PARA O FRONTEND
+# ============================================
+
+!frontend/
+!frontend/**
+!frontend/package.json
+!frontend/package-lock.json

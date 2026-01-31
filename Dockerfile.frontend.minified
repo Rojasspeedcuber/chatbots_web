@@ -9,14 +9,14 @@ FROM node:18-bullseye AS builder
 
 WORKDIR /build
 
-# Copiar apenas package.json para cache de dependencias
-COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/package*.json ./
+
 
 # Instalar apenas dependencias de build
 RUN npm install --no-audit --no-fund
 
 # Copiar arquivos HTML
-COPY frontend/ ./
+COPY frontend/ .
 
 RUN npm run build
 
