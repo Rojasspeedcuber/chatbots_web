@@ -1,0 +1,32 @@
+{
+  "name": "bible-ai-chat",
+  "version": "1.0.0",
+  "description": "Bible AI Chat - Frontend com integracao Mercado Pago",
+  "private": true,
+  "scripts": {
+    "start": "docker compose up -d",
+    "stop": "docker compose down",
+    "build": "docker compose build --no-cache",
+    "logs": "docker compose logs -f",
+    "restart": "docker compose restart",
+    "clean": "docker compose down -v --rmi local",
+    "prod": "docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d",
+    "minify": "html-minifier-terser --collapse-whitespace --remove-comments --minify-css true --minify-js true -o dist/index.html frontend_complete.html",
+    "lint": "htmlhint frontend_complete.html"
+  },
+  "devDependencies": {
+    "html-minifier-terser": "^7.2.0",
+    "htmlhint": "^1.1.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "chatbot",
+    "bible",
+    "n8n",
+    "mercado-pago",
+    "docker"
+  ],
+  "license": "MIT"
+}
