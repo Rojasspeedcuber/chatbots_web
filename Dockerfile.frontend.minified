@@ -5,7 +5,7 @@
 # ============================================
 
 # Stage 1: Minificar assets
-FROM node:18-bullseye AS builder
+FROM node:18-alpine AS builder
 
 WORKDIR /build
 
