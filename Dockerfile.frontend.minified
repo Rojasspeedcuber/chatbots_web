@@ -12,8 +12,6 @@ RUN npm ci
 
 COPY frontend_complete.html .
 
-RUN npm run minify
-
 
 # ===============================
 # STAGE 2 — RUNTIME
