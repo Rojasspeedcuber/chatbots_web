@@ -8,14 +8,14 @@ WORKDIR /app
 
 # Copia apenas arquivos de dependências
 # (permite cache eficiente do Docker)
-COPY frontend/package.json frontend/package-lock.json ./
+COPY /frontend/package.json /frontend/package-lock.json ./
 
 # Instala dependências de forma determinística
 # npm ci é obrigatório para lockfileVersion 3
 RUN npm ci --no-audit --no-fund
 
 # Copia o HTML principal
-COPY frontend/frontend_complete.html .
+COPY /frontend/frontend_complete.html .
 
 # Executa minificação conforme script definido no package.json
 RUN npm run minify
