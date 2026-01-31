@@ -1,0 +1,262 @@
+{
+  "name": "Mercado Pago - Criar Assinatura",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subscription/create",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-create-subscription",
+      "name": "Webhook - Criar Assinatura",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "subscription-create-webhook",
+      "notes": "Endpoint: POST /webhook/subscription/create\n\nBody esperado:\n{\n  \"userId\": \"user-123\",\n  \"email\": \"usuario@email.com\",\n  \"planId\": \"monthly\" (opcional, default: monthly)\n}"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// VALIDAÇÃO DOS PARÂMETROS DE ASSINATURA\n// ========================================\n\nconst items = $input.all();\nconst results = [];\n\n// Configuração dos planos disponíveis\nconst PLANS = {\n  monthly: {\n    id: 'monthly',\n    name: 'Plano Mensal',\n    amount: 19.90,\n    currency: 'BRL',\n    frequency: 1,\n    frequencyType: 'months',\n    description: 'Acesso ilimitado ao Bible AI Chat - Mensal'\n  },\n  quarterly: {\n    id: 'quarterly',\n    name: 'Plano Trimestral',\n    amount: 49.90,\n    currency: 'BRL',\n    frequency: 3,\n    frequencyType: 'months',\n    description: 'Acesso ilimitado ao Bible AI Chat - Trimestral'\n  },\n  yearly: {\n    id: 'yearly',\n    name: 'Plano Anual',\n    amount: 149.90,\n    currency: 'BRL',\n    frequency: 12,\n    frequencyType: 'months',\n    description: 'Acesso ilimitado ao Bible AI Chat - Anual'\n  }\n};\n\nfor (const item of items) {\n  const body = item.json.body || item.json;\n  \n  // Validar userId\n  if (!body.userId || typeof body.userId !== 'string' || body.userId.trim() === '') {\n    throw new Error('VALIDATION_ERROR: Campo \"userId\" é obrigatório.');\n  }\n  \n  // Validar email\n  if (!body.email || typeof body.email !== 'string') {\n    throw new Error('VALIDATION_ERROR: Campo \"email\" é obrigatório.');\n  }\n  \n  const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n  if (!emailRegex.test(body.email)) {\n    throw new Error('VALIDATION_ERROR: Email inválido.');\n  }\n  \n  // Validar planId (default: monthly)\n  const planId = body.planId || 'monthly';\n  if (!PLANS[planId]) {\n    throw new Error(`VALIDATION_ERROR: Plano \"${planId}\" não existe. Planos válidos: ${Object.keys(PLANS).join(', ')}`);\n  }\n  \n  const plan = PLANS[planId];\n  \n  results.push({\n    json: {\n      userId: body.userId.trim(),\n      email: body.email.trim().toLowerCase(),\n      plan,\n      requestId: `sub_req_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,\n      timestamp: new Date().toISOString()\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "validate-subscription-params",
+      "name": "Validar Parâmetros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300],
+      "notes": "Valida os parâmetros:\n- userId (obrigatório)\n- email (obrigatório, formato válido)\n- planId (opcional, default: monthly)\n\nPlanos disponíveis:\n- monthly: R$ 19,90/mês\n- quarterly: R$ 49,90/trimestre\n- yearly: R$ 149,90/ano"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mercadopago.com/preapproval",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"reason\": $json.plan.description,\n  \"auto_recurring\": {\n    \"frequency\": $json.plan.frequency,\n    \"frequency_type\": $json.plan.frequencyType,\n    \"transaction_amount\": $json.plan.amount,\n    \"currency_id\": $json.plan.currency\n  },\n  \"back_url\": \"https://seu-site.com/subscription/callback\",\n  \"payer_email\": $json.email,\n  \"external_reference\": $json.userId,\n  \"status\": \"pending\"\n} }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "create-preapproval",
+      "name": "Criar Preapproval MP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [690, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_MP_CREDENTIAL",
+          "name": "Mercado Pago Access Token"
+        }
+      },
+      "notes": "Cria assinatura recorrente no Mercado Pago.\n\nCONFIGURAÇÃO DA CREDENCIAL:\n1. Criar HTTP Header Auth\n2. Header Name: Authorization\n3. Header Value: Bearer APP_USR-xxx (seu Access Token)\n\nIMPORTANTE:\n- Altere back_url para seu domínio real\n- external_reference = userId para rastreamento"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// PROCESSAR RESPOSTA DO MERCADO PAGO\n// ========================================\n\nconst items = $input.all();\nconst inputData = $('Validar Parâmetros').first().json;\nconst results = [];\n\nfor (const item of items) {\n  const response = item.json;\n  \n  // Verificar se a resposta é válida\n  if (!response.body || !response.body.id) {\n    const errorMsg = response.body?.message || response.body?.error || 'Erro desconhecido';\n    throw new Error(`MP_ERROR: Falha ao criar assinatura - ${errorMsg}`);\n  }\n  \n  const mpResponse = response.body;\n  \n  // Dados para persistência\n  const subscriptionData = {\n    id: mpResponse.id,\n    userId: inputData.userId,\n    email: inputData.email,\n    planId: inputData.plan.id,\n    planName: inputData.plan.name,\n    amount: inputData.plan.amount,\n    status: mpResponse.status || 'pending',\n    initPoint: mpResponse.init_point,\n    sandboxInitPoint: mpResponse.sandbox_init_point,\n    createdAt: mpResponse.date_created || new Date().toISOString(),\n    nextPaymentDate: mpResponse.next_payment_date,\n    externalReference: mpResponse.external_reference\n  };\n  \n  results.push({\n    json: {\n      success: true,\n      subscription: subscriptionData,\n      paymentLink: mpResponse.init_point,\n      sandboxLink: mpResponse.sandbox_init_point,\n      metadata: {\n        requestId: inputData.requestId,\n        timestamp: inputData.timestamp,\n        responseTimestamp: new Date().toISOString()\n      }\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "process-mp-response",
+      "name": "Processar Resposta MP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 300],
+      "notes": "Processa a resposta do Mercado Pago.\n\nExtrai:\n- ID da assinatura\n- Link de pagamento (init_point)\n- Status inicial\n- Próxima data de pagamento\n\nRetorna dados formatados para frontend e persistência."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// SALVAR ASSINATURA NO 'BANCO DE DADOS'\n// ========================================\n\n// NOTA: Este é um exemplo usando variável estática do n8n\n// Para produção, substitua por um node de banco de dados real\n// (PostgreSQL, MySQL, MongoDB, etc.)\n\nconst items = $input.all();\nconst staticData = $getWorkflowStaticData('global');\n\n// Inicializar 'banco' se não existir\nif (!staticData.subscriptions) {\n  staticData.subscriptions = {};\n}\n\nfor (const item of items) {\n  const { subscription } = item.json;\n  \n  // Salvar/atualizar assinatura indexada por userId\n  staticData.subscriptions[subscription.userId] = {\n    ...subscription,\n    updatedAt: new Date().toISOString()\n  };\n  \n  // Log para debug\n  console.log(`[SUBSCRIPTION SAVED] User: ${subscription.userId}, Status: ${subscription.status}`);\n}\n\nreturn items;"
+      },
+      "id": "save-subscription",
+      "name": "Salvar Assinatura",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 300],
+      "notes": "Persiste a assinatura.\n\nMODO ATUAL: Static Data (memória)\n- Bom para MVP/testes\n- Perde dados ao reiniciar\n\nPARA PRODUÇÃO:\n- Substitua por node PostgreSQL/MySQL\n- Ou use Supabase/Firebase"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"message\": \"Assinatura criada com sucesso\",\n  \"data\": {\n    \"subscriptionId\": $json.subscription.id,\n    \"status\": $json.subscription.status,\n    \"paymentLink\": $json.paymentLink,\n    \"plan\": {\n      \"id\": $json.subscription.planId,\n      \"name\": $json.subscription.planName,\n      \"amount\": $json.subscription.amount\n    }\n  },\n  \"metadata\": $json.metadata\n} }}",
+        "options": {
+          "responseCode": 201,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-subscription-success",
+      "name": "Responder Sucesso",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1350, 300],
+      "notes": "Retorna resposta de sucesso (HTTP 201).\n\nInclui:\n- ID da assinatura\n- Link de pagamento\n- Dados do plano"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// TRATAMENTO DE ERROS\n// ========================================\n\nconst error = $input.first().json;\nconst errorMessage = error.message || error.error?.message || 'Erro desconhecido';\n\nlet errorType = 'INTERNAL_ERROR';\nlet statusCode = 500;\nlet userMessage = 'Erro ao criar assinatura. Tente novamente.';\n\nif (errorMessage.includes('VALIDATION_ERROR')) {\n  errorType = 'VALIDATION_ERROR';\n  statusCode = 400;\n  userMessage = errorMessage.replace('VALIDATION_ERROR: ', '');\n} else if (errorMessage.includes('MP_ERROR')) {\n  errorType = 'PAYMENT_PROVIDER_ERROR';\n  statusCode = 502;\n  userMessage = 'Erro no provedor de pagamento. Tente novamente.';\n} else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {\n  errorType = 'AUTH_ERROR';\n  statusCode = 500;\n  userMessage = 'Erro de configuração do sistema de pagamento.';\n}\n\nreturn [{\n  json: {\n    success: false,\n    error: {\n      type: errorType,\n      message: userMessage,\n      code: statusCode,\n      timestamp: new Date().toISOString()\n    }\n  },\n  statusCode\n}];"
+      },
+      "id": "subscription-error-handler",
+      "name": "Tratar Erros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 520],
+      "notes": "Tratamento de erros para criação de assinatura."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: $json.success, error: $json.error } }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-subscription-error",
+      "name": "Responder Erro",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1130, 520],
+      "notes": "Retorna erro com código HTTP apropriado."
+    },
+    {
+      "parameters": {
+        "content": "## 💳 Criar Assinatura - Mercado Pago\n\n### Endpoint\n`POST /webhook/subscription/create`\n\n### Body\n```json\n{\n  \"userId\": \"user-123\",\n  \"email\": \"email@exemplo.com\",\n  \"planId\": \"monthly\"\n}\n```\n\n### Planos Disponíveis\n- `monthly`: R$ 19,90/mês\n- `quarterly`: R$ 49,90/trimestre\n- `yearly`: R$ 149,90/ano\n\n### Resposta\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"subscriptionId\": \"xxx\",\n    \"paymentLink\": \"https://...\",\n    \"status\": \"pending\"\n  }\n}\n```\n\n### Configuração\n1. Criar credencial HTTP Header Auth\n2. Name: Authorization\n3. Value: Bearer APP_USR-xxx",
+        "height": 520,
+        "width": 320,
+        "color": 5
+      },
+      "id": "sticky-subscription-docs",
+      "name": "Documentação",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, 160]
+    }
+  ],
+  "connections": {
+    "Webhook - Criar Assinatura": {
+      "main": [
+        [
+          {
+            "node": "Validar Parâmetros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Parâmetros": {
+      "main": [
+        [
+          {
+            "node": "Criar Preapproval MP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar Preapproval MP": {
+      "main": [
+        [
+          {
+            "node": "Processar Resposta MP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Resposta MP": {
+      "main": [
+        [
+          {
+            "node": "Salvar Assinatura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Assinatura": {
+      "main": [
+        [
+          {
+            "node": "Responder Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tratar Erros": {
+      "main": [
+        [
+          {
+            "node": "Responder Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": {
+    "global": {
+      "subscriptions": {}
+    }
+  },
+  "tags": [
+    {
+      "name": "mercado-pago",
+      "id": "10"
+    },
+    {
+      "name": "subscription",
+      "id": "11"
+    },
+    {
+      "name": "payment",
+      "id": "12"
+    }
+  ],
+  "triggerCount": 1,
+  "meta": {
+    "templateId": "mp-subscription-create",
+    "instanceId": "easypanel-n8n"
+  }
+}

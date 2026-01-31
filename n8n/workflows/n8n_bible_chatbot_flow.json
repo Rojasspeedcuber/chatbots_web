@@ -1,0 +1,331 @@
+{
+  "name": "Bible AI Chatbot - Web API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat/bible",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Chat Bible API",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "bible-chat-webhook",
+      "notes": "Endpoint principal: POST /webhook/chat/bible\n\nEspera body JSON:\n{\n  \"message\": \"pergunta do usuário\",\n  \"sessionId\": \"id-unico-sessao\",\n  \"userId\": \"id-usuario-opcional\"\n}"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// VALIDAÇÃO DE PARÂMETROS DA REQUISIÇÃO\n// ========================================\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const body = item.json.body || item.json;\n  \n  // Validar campo obrigatório: message\n  if (!body.message || typeof body.message !== 'string' || body.message.trim() === '') {\n    throw new Error('VALIDATION_ERROR: Campo \"message\" é obrigatório e deve ser uma string não vazia.');\n  }\n  \n  // Gerar sessionId se não fornecido\n  const sessionId = body.sessionId || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\n  \n  // UserId opcional\n  const userId = body.userId || 'anonymous';\n  \n  // Limitar tamanho da mensagem (segurança)\n  const maxLength = 2000;\n  const userMessage = body.message.trim().substring(0, maxLength);\n  \n  results.push({\n    json: {\n      userMessage,\n      sessionId,\n      userId,\n      timestamp: new Date().toISOString(),\n      requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "validate-params",
+      "name": "Validar Parâmetros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300],
+      "notes": "Valida os parâmetros recebidos:\n- message (obrigatório)\n- sessionId (gerado se não fornecido)\n- userId (opcional, default: anonymous)\n\nLimita mensagem a 2000 caracteres por segurança."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// CONSTRUÇÃO DO PROMPT COM CONTEXTO BÍBLICO\n// ========================================\n\nconst items = $input.all();\nconst results = [];\n\n// Prompt de sistema com contexto bíblico profundo\nconst BIBLE_SYSTEM_PROMPT = `Você é um assistente espiritual cristão especializado na Bíblia Sagrada. Seu papel é:\n\n## IDENTIDADE E PROPÓSITO\n- Você é um conselheiro bíblico sábio, compassivo e acolhedor\n- Seu conhecimento abrange toda a Bíblia (Antigo e Novo Testamento)\n- Você conhece profundamente teologia cristã, história bíblica e interpretação das Escrituras\n\n## DIRETRIZES DE RESPOSTA\n1. **Base Bíblica**: Sempre fundamente suas respostas nas Escrituras Sagradas\n2. **Citações**: Inclua versículos relevantes com referência (ex: João 3:16)\n3. **Contextualização**: Explique o contexto histórico e cultural quando relevante\n4. **Aplicação Prática**: Conecte os ensinamentos bíblicos com a vida cotidiana\n5. **Tom Acolhedor**: Seja gentil, empático e encorajador\n6. **Precisão**: Se não souber algo com certeza, admita humildemente\n\n## LIMITAÇÕES\n- Não faça previsões sobre o futuro ou profecias pessoais\n- Não substitua aconselhamento profissional (médico, jurídico, psicológico)\n- Não entre em debates denominacionais divisivos\n- Mantenha respeito por diferentes tradições cristãs\n\n## FORMATO DE RESPOSTA\n- Seja conciso mas completo\n- Use linguagem clara e acessível\n- Organize respostas longas em tópicos quando apropriado\n- Sempre termine com uma palavra de encorajamento ou reflexão\n\nResponda em português brasileiro de forma natural e acolhedora.`;\n\nfor (const item of items) {\n  const { userMessage, sessionId, userId, timestamp, requestId } = item.json;\n  \n  // Construir mensagens para a API\n  const messages = [\n    {\n      role: 'system',\n      content: BIBLE_SYSTEM_PROMPT\n    },\n    {\n      role: 'user',\n      content: userMessage\n    }\n  ];\n  \n  results.push({\n    json: {\n      messages,\n      userMessage,\n      sessionId,\n      userId,\n      timestamp,\n      requestId,\n      model: 'gpt-4o-mini', // Pode ser alterado para gpt-4, claude, etc.\n      maxTokens: 1500,\n      temperature: 0.7\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "build-prompt",
+      "name": "Construir Prompt Bíblico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [690, 300],
+      "notes": "Monta o prompt com contexto bíblico profundo.\n\nO system prompt define:\n- Identidade do assistente\n- Diretrizes de resposta\n- Limitações éticas\n- Formato de saída\n\nVariáveis configuráveis:\n- model: modelo de IA\n- maxTokens: limite de tokens\n- temperature: criatividade"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": $json.model,\n  \"messages\": $json.messages,\n  \"max_tokens\": $json.maxTokens,\n  \"temperature\": $json.temperature,\n  \"presence_penalty\": 0.1,\n  \"frequency_penalty\": 0.1\n} }}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "call-openai",
+      "name": "Chamar OpenAI API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [910, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_CREDENTIAL_ID",
+          "name": "OpenAI API Key"
+        }
+      },
+      "notes": "Chamada para OpenAI Chat Completions API.\n\nCONFIGURAÇÃO NECESSÁRIA:\n1. Criar credencial HTTP Header Auth no n8n\n2. Header Name: Authorization\n3. Header Value: Bearer sk-YOUR-API-KEY\n\nPara usar Anthropic Claude:\n- URL: https://api.anthropic.com/v1/messages\n- Ajustar body conforme API Claude\n\nTimeout: 60 segundos"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// PROCESSAR RESPOSTA DA IA\n// ========================================\n\nconst items = $input.all();\nconst inputData = $('Construir Prompt Bíblico').first().json;\nconst results = [];\n\nfor (const item of items) {\n  const response = item.json;\n  \n  // Verificar se a resposta é válida\n  if (!response.body || !response.body.choices || !response.body.choices[0]) {\n    throw new Error('AI_ERROR: Resposta inválida da API de IA');\n  }\n  \n  const aiResponse = response.body.choices[0].message.content;\n  const usage = response.body.usage || {};\n  \n  results.push({\n    json: {\n      response: aiResponse,\n      status: 'success',\n      metadata: {\n        requestId: inputData.requestId,\n        sessionId: inputData.sessionId,\n        userId: inputData.userId,\n        timestamp: inputData.timestamp,\n        responseTimestamp: new Date().toISOString(),\n        model: response.body.model || inputData.model,\n        tokensUsed: {\n          prompt: usage.prompt_tokens || 0,\n          completion: usage.completion_tokens || 0,\n          total: usage.total_tokens || 0\n        }\n      }\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "process-response",
+      "name": "Processar Resposta IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 300],
+      "notes": "Extrai e formata a resposta da IA.\n\nRetorna objeto com:\n- response: texto da resposta\n- status: success/error\n- metadata: informações da requisição"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "X-Request-Id",
+                "value": "={{ $json.metadata.requestId }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-success",
+      "name": "Responder Sucesso",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1350, 300],
+      "notes": "Retorna resposta JSON de sucesso (HTTP 200).\n\nFormato:\n{\n  \"response\": \"texto da IA\",\n  \"status\": \"success\",\n  \"metadata\": {...}\n}"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// TRATAMENTO DE ERROS CENTRALIZADO\n// ========================================\n\nconst error = $input.first().json;\nconst errorMessage = error.message || error.error?.message || 'Erro desconhecido';\nconst errorStack = error.stack || '';\n\n// Classificar tipo de erro\nlet errorType = 'INTERNAL_ERROR';\nlet statusCode = 500;\nlet userMessage = 'Ocorreu um erro interno. Por favor, tente novamente.';\n\nif (errorMessage.includes('VALIDATION_ERROR')) {\n  errorType = 'VALIDATION_ERROR';\n  statusCode = 400;\n  userMessage = errorMessage.replace('VALIDATION_ERROR: ', '');\n} else if (errorMessage.includes('AI_ERROR')) {\n  errorType = 'AI_SERVICE_ERROR';\n  statusCode = 502;\n  userMessage = 'O serviço de IA está temporariamente indisponível. Tente novamente em alguns instantes.';\n} else if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {\n  errorType = 'TIMEOUT_ERROR';\n  statusCode = 504;\n  userMessage = 'A requisição demorou muito para ser processada. Tente novamente.';\n} else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {\n  errorType = 'AUTH_ERROR';\n  statusCode = 500;\n  userMessage = 'Erro de configuração do serviço. Contate o administrador.';\n} else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {\n  errorType = 'RATE_LIMIT_ERROR';\n  statusCode = 429;\n  userMessage = 'Muitas requisições. Aguarde alguns segundos e tente novamente.';\n}\n\nreturn [{\n  json: {\n    response: null,\n    status: 'error',\n    error: {\n      type: errorType,\n      message: userMessage,\n      code: statusCode,\n      timestamp: new Date().toISOString(),\n      // Detalhes técnicos (remover em produção se necessário)\n      _debug: {\n        originalMessage: errorMessage,\n        stack: errorStack.substring(0, 500)\n      }\n    }\n  },\n  statusCode\n}];"
+      },
+      "id": "error-handler",
+      "name": "Tratar Erros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 520],
+      "notes": "Tratamento centralizado de erros.\n\nClassifica erros por tipo:\n- VALIDATION_ERROR (400)\n- AI_SERVICE_ERROR (502)\n- TIMEOUT_ERROR (504)\n- AUTH_ERROR (500)\n- RATE_LIMIT_ERROR (429)\n- INTERNAL_ERROR (500)\n\nRetorna mensagem amigável ao usuário."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { response: $json.response, status: $json.status, error: $json.error } }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-error",
+      "name": "Responder Erro",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1130, 520],
+      "notes": "Retorna resposta de erro com código HTTP apropriado."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// LOG DE INTERAÇÕES (OPCIONAL)\n// ========================================\n\nconst inputData = $('Processar Resposta IA').first().json;\nconst promptData = $('Construir Prompt Bíblico').first().json;\n\nconst logEntry = {\n  timestamp: new Date().toISOString(),\n  requestId: inputData.metadata.requestId,\n  sessionId: inputData.metadata.sessionId,\n  userId: inputData.metadata.userId,\n  userMessage: promptData.userMessage,\n  aiResponse: inputData.response.substring(0, 500) + (inputData.response.length > 500 ? '...' : ''),\n  tokensUsed: inputData.metadata.tokensUsed,\n  model: inputData.metadata.model,\n  status: 'success'\n};\n\nconsole.log('=== BIBLE CHAT LOG ===' );\nconsole.log(JSON.stringify(logEntry, null, 2));\n\nreturn [{ json: logEntry }];"
+      },
+      "id": "log-interaction",
+      "name": "Log Interação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1350, 480],
+      "notes": "Log opcional das interações.\n\nPara persistir em banco de dados:\n1. Adicione node PostgreSQL/MySQL/MongoDB após este\n2. Configure tabela/collection para logs\n\nPara arquivo:\n1. Use node Write File\n2. Configure path do arquivo"
+    },
+    {
+      "parameters": {},
+      "id": "noop-end",
+      "name": "Fim (Log)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1560, 480],
+      "notes": "Nó final após logging."
+    },
+    {
+      "parameters": {
+        "content": "## 📖 Bible AI Chatbot - Web API\n\n### Endpoint\n`POST /webhook/chat/bible`\n\n### Body (JSON)\n```json\n{\n  \"message\": \"O que a Bíblia diz sobre amor?\",\n  \"sessionId\": \"opcional-id-sessao\",\n  \"userId\": \"opcional-id-usuario\"\n}\n```\n\n### Resposta Sucesso (200)\n```json\n{\n  \"response\": \"Resposta da IA...\",\n  \"status\": \"success\",\n  \"metadata\": {\n    \"requestId\": \"req_xxx\",\n    \"sessionId\": \"session_xxx\",\n    \"tokensUsed\": {...}\n  }\n}\n```\n\n### Configuração Necessária\n1. **Credencial OpenAI**: HTTP Header Auth\n   - Name: `Authorization`\n   - Value: `Bearer sk-YOUR-KEY`\n\n2. **Variáveis de Ambiente (EasyPanel)**:\n   - `OPENAI_API_KEY`: Chave da API\n   - `N8N_WEBHOOK_URL`: URL base do n8n",
+        "height": 580,
+        "width": 340,
+        "color": 4
+      },
+      "id": "sticky-docs",
+      "name": "Documentação",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, 180]
+    },
+    {
+      "parameters": {
+        "content": "## ⚙️ Fluxo de Execução\n\n1. **Webhook** recebe POST\n2. **Validação** dos parâmetros\n3. **Prompt** construído com contexto bíblico\n4. **OpenAI** processa a pergunta\n5. **Resposta** formatada e retornada\n\n### Error Handling\n- Erros são capturados em qualquer etapa\n- Respostas de erro padronizadas\n- Códigos HTTP apropriados",
+        "height": 300,
+        "width": 280,
+        "color": 6
+      },
+      "id": "sticky-flow",
+      "name": "Fluxo",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [250, 60]
+    },
+    {
+      "parameters": {
+        "content": "## 🔧 Para usar Anthropic Claude\n\nAltere o node \"Chamar OpenAI API\":\n\n**URL:** `https://api.anthropic.com/v1/messages`\n\n**Headers:**\n- `x-api-key`: sua-chave\n- `anthropic-version`: 2023-06-01\n\n**Body:**\n```json\n{\n  \"model\": \"claude-3-sonnet-20240229\",\n  \"max_tokens\": 1500,\n  \"messages\": [...]\n}\n```",
+        "height": 300,
+        "width": 280,
+        "color": 3
+      },
+      "id": "sticky-anthropic",
+      "name": "Alternativa Claude",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [560, 60]
+    }
+  ],
+  "connections": {
+    "Webhook - Chat Bible API": {
+      "main": [
+        [
+          {
+            "node": "Validar Parâmetros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Parâmetros": {
+      "main": [
+        [
+          {
+            "node": "Construir Prompt Bíblico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir Prompt Bíblico": {
+      "main": [
+        [
+          {
+            "node": "Chamar OpenAI API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar OpenAI API": {
+      "main": [
+        [
+          {
+            "node": "Processar Resposta IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Resposta IA": {
+      "main": [
+        [
+          {
+            "node": "Responder Sucesso",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Interação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tratar Erros": {
+      "main": [
+        [
+          {
+            "node": "Responder Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Interação": {
+      "main": [
+        [
+          {
+            "node": "Fim (Log)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "chatbot",
+      "id": "1"
+    },
+    {
+      "name": "bible",
+      "id": "2"
+    },
+    {
+      "name": "ai",
+      "id": "3"
+    },
+    {
+      "name": "web-api",
+      "id": "4"
+    }
+  ],
+  "triggerCount": 1,
+  "meta": {
+    "templateId": "bible-ai-chatbot-web",
+    "templateCredsSetupCompleted": false,
+    "instanceId": "easypanel-n8n"
+  },
+  "pinData": {}
+}

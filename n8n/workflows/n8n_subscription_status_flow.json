@@ -1,0 +1,122 @@
+{
+  "name": "Mercado Pago - Verificar Status Assinatura",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "subscription/status/:userId",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-check-status",
+      "name": "Webhook - Verificar Status",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "subscription-status-webhook",
+      "notes": "Endpoint: GET /webhook/subscription/status/:userId\n\nParâmetros de URL:\n- userId: ID do usuário\n\nExemplo:\nGET /webhook/subscription/status/user-123"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// VERIFICAR STATUS DA ASSINATURA\n// ========================================\n\nconst items = $input.all();\nconst staticData = $getWorkflowStaticData('global');\nconst results = [];\n\nfor (const item of items) {\n  // Pegar userId da URL\n  const params = item.json.params || {};\n  const userId = params.userId;\n  \n  if (!userId) {\n    results.push({\n      json: {\n        success: false,\n        error: {\n          type: 'VALIDATION_ERROR',\n          message: 'userId é obrigatório',\n          code: 400\n        }\n      },\n      statusCode: 400\n    });\n    continue;\n  }\n  \n  // Buscar assinatura no 'banco'\n  const subscriptions = staticData.subscriptions || {};\n  const subscription = subscriptions[userId];\n  \n  if (!subscription) {\n    results.push({\n      json: {\n        success: true,\n        data: {\n          userId,\n          hasSubscription: false,\n          status: 'none',\n          message: 'Usuário não possui assinatura'\n        }\n      },\n      statusCode: 200\n    });\n    continue;\n  }\n  \n  // Verificar se está ativa\n  const isActive = subscription.status === 'active' || subscription.status === 'authorized';\n  \n  // Calcular dias até próximo pagamento\n  let daysUntilPayment = null;\n  if (subscription.nextPaymentDate) {\n    const nextDate = new Date(subscription.nextPaymentDate);\n    const now = new Date();\n    daysUntilPayment = Math.ceil((nextDate - now) / (1000 * 60 * 60 * 24));\n  }\n  \n  results.push({\n    json: {\n      success: true,\n      data: {\n        userId,\n        hasSubscription: true,\n        isActive,\n        status: subscription.status,\n        subscriptionId: subscription.id,\n        plan: {\n          id: subscription.planId,\n          name: subscription.planName,\n          amount: subscription.amount\n        },\n        nextPaymentDate: subscription.nextPaymentDate,\n        daysUntilPayment,\n        email: subscription.email,\n        createdAt: subscription.createdAt,\n        updatedAt: subscription.updatedAt\n      }\n    },\n    statusCode: 200\n  });\n}\n\nreturn results;"
+      },
+      "id": "check-subscription-status",
+      "name": "Verificar Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300],
+      "notes": "Verifica se o usuário tem assinatura ativa.\n\nRetorna:\n- hasSubscription: se possui assinatura\n- isActive: se está ativa\n- status: status atual\n- daysUntilPayment: dias até próximo pagamento"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-cache, no-store, must-revalidate"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-status",
+      "name": "Responder Status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [690, 300],
+      "notes": "Retorna o status da assinatura.\n\nHeaders incluem Cache-Control para\nevitar cache de status desatualizado."
+    },
+    {
+      "parameters": {
+        "content": "## ✅ Verificar Status de Assinatura\n\n### Endpoint\n```\nGET /webhook/subscription/status/:userId\n```\n\n### Exemplo\n```\nGET /webhook/subscription/status/user-123\n```\n\n### Resposta (com assinatura)\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"userId\": \"user-123\",\n    \"hasSubscription\": true,\n    \"isActive\": true,\n    \"status\": \"active\",\n    \"daysUntilPayment\": 15,\n    \"plan\": {...}\n  }\n}\n```\n\n### Resposta (sem assinatura)\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"hasSubscription\": false,\n    \"status\": \"none\"\n  }\n}\n```",
+        "height": 460,
+        "width": 300,
+        "color": 4
+      },
+      "id": "sticky-status-docs",
+      "name": "Documentação",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, 140]
+    }
+  ],
+  "connections": {
+    "Webhook - Verificar Status": {
+      "main": [
+        [
+          {
+            "node": "Verificar Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Status": {
+      "main": [
+        [
+          {
+            "node": "Responder Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": {
+    "global": {
+      "subscriptions": {}
+    }
+  },
+  "tags": [
+    {
+      "name": "subscription",
+      "id": "11"
+    },
+    {
+      "name": "status",
+      "id": "15"
+    }
+  ],
+  "triggerCount": 1,
+  "meta": {
+    "templateId": "mp-subscription-status",
+    "instanceId": "easypanel-n8n"
+  }
+}

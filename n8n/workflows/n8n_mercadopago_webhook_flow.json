@@ -1,0 +1,303 @@
+{
+  "name": "Mercado Pago - Webhook Notificações",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook/mercadopago",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-mp-notifications",
+      "name": "Webhook - MP Notificações",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "mp-webhook",
+      "notes": "Endpoint: POST /webhook/webhook/mercadopago\n\nRecebe notificações do Mercado Pago:\n- Pagamentos\n- Assinaturas (preapproval)\n- Chargebacks\n\nConfigure este URL no painel do Mercado Pago:\nhttps://seu-n8n.easypanel.host/webhook/webhook/mercadopago"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// VALIDAR E PARSEAR WEBHOOK DO MERCADO PAGO\n// ========================================\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const webhookData = item.json.body || item.json;\n  const headers = item.json.headers || {};\n  const query = item.json.query || {};\n  \n  // Log do webhook recebido\n  console.log('[MP WEBHOOK] Recebido:', JSON.stringify(webhookData));\n  \n  // Mercado Pago envia dados de diferentes formas\n  // 1. Notificação IPN (Instant Payment Notification)\n  // 2. Webhook moderno\n  \n  let eventType = '';\n  let resourceId = '';\n  let topic = '';\n  \n  // Formato IPN antigo (query params)\n  if (query.topic && query.id) {\n    topic = query.topic;\n    resourceId = query.id;\n    eventType = `ipn_${topic}`;\n  }\n  // Formato webhook moderno\n  else if (webhookData.type && webhookData.data) {\n    eventType = webhookData.type;\n    resourceId = webhookData.data.id;\n    topic = webhookData.type.split('.')[0]; // ex: 'payment' de 'payment.created'\n  }\n  // Formato alternativo\n  else if (webhookData.action && webhookData.id) {\n    eventType = webhookData.action;\n    resourceId = webhookData.id;\n    topic = webhookData.type || 'unknown';\n  }\n  \n  if (!eventType || !resourceId) {\n    console.log('[MP WEBHOOK] Formato não reconhecido, ignorando');\n    // Retornar 200 para não reenviar\n    return [{ json: { acknowledged: true, processed: false, reason: 'unknown_format' } }];\n  }\n  \n  results.push({\n    json: {\n      eventType,\n      resourceId,\n      topic,\n      rawData: webhookData,\n      receivedAt: new Date().toISOString(),\n      webhookId: `wh_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "parse-mp-webhook",
+      "name": "Parsear Webhook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300],
+      "notes": "Parseia o webhook do Mercado Pago.\n\nSuporta formatos:\n- IPN (Instant Payment Notification)\n- Webhook moderno\n- Notificações de preapproval"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "preapproval-condition",
+              "leftValue": "={{ $json.topic }}",
+              "rightValue": "preapproval",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-topic-type",
+      "name": "É Assinatura?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [690, 300],
+      "notes": "Verifica se o webhook é sobre assinaturas (preapproval).\n\nSe sim: buscar detalhes da assinatura\nSe não: processar pagamento ou ignorar"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.mercadopago.com/preapproval/{{ $json.resourceId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "get-preapproval-details",
+      "name": "Buscar Detalhes Assinatura",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [910, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_MP_CREDENTIAL",
+          "name": "Mercado Pago Access Token"
+        }
+      },
+      "notes": "Busca detalhes completos da assinatura no Mercado Pago.\n\nRetorna:\n- Status atual\n- Dados do pagador\n- Próximo pagamento\n- Histórico"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// PROCESSAR STATUS DA ASSINATURA\n// ========================================\n\nconst items = $input.all();\nconst webhookInfo = $('Parsear Webhook').first().json;\nconst results = [];\n\n// Mapeamento de status do Mercado Pago para status interno\nconst STATUS_MAP = {\n  'pending': 'pending',\n  'authorized': 'active',\n  'paused': 'paused',\n  'cancelled': 'cancelled',\n  'finished': 'finished'\n};\n\nfor (const item of items) {\n  const response = item.json;\n  \n  if (!response.body || !response.body.id) {\n    console.log('[MP WEBHOOK] Assinatura não encontrada');\n    continue;\n  }\n  \n  const preapproval = response.body;\n  \n  // Extrair userId do external_reference\n  const userId = preapproval.external_reference;\n  \n  if (!userId) {\n    console.log('[MP WEBHOOK] external_reference (userId) não encontrado');\n    continue;\n  }\n  \n  const internalStatus = STATUS_MAP[preapproval.status] || preapproval.status;\n  \n  results.push({\n    json: {\n      subscriptionId: preapproval.id,\n      userId: userId,\n      email: preapproval.payer_email,\n      mpStatus: preapproval.status,\n      internalStatus: internalStatus,\n      reason: preapproval.reason,\n      amount: preapproval.auto_recurring?.transaction_amount,\n      currency: preapproval.auto_recurring?.currency_id,\n      nextPaymentDate: preapproval.next_payment_date,\n      lastModified: preapproval.last_modified,\n      dateCreated: preapproval.date_created,\n      webhookId: webhookInfo.webhookId,\n      eventType: webhookInfo.eventType,\n      processedAt: new Date().toISOString()\n    }\n  });\n}\n\nif (results.length === 0) {\n  return [{ json: { processed: false, reason: 'no_valid_subscription' } }];\n}\n\nreturn results;"
+      },
+      "id": "process-preapproval-status",
+      "name": "Processar Status Assinatura",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 200],
+      "notes": "Mapeia status do MP para status interno:\n\n- pending → pending\n- authorized → active\n- paused → paused\n- cancelled → cancelled\n- finished → finished"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// ATUALIZAR STATUS NO 'BANCO DE DADOS'\n// ========================================\n\nconst items = $input.all();\nconst staticData = $getWorkflowStaticData('global');\n\n// Inicializar 'banco' se não existir\nif (!staticData.subscriptions) {\n  staticData.subscriptions = {};\n}\n\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json;\n  \n  if (!data.userId) {\n    results.push({ json: { updated: false, reason: 'no_user_id' } });\n    continue;\n  }\n  \n  // Buscar assinatura existente ou criar nova\n  const existing = staticData.subscriptions[data.userId] || {};\n  \n  // Atualizar dados\n  staticData.subscriptions[data.userId] = {\n    ...existing,\n    id: data.subscriptionId,\n    userId: data.userId,\n    email: data.email || existing.email,\n    status: data.internalStatus,\n    mpStatus: data.mpStatus,\n    amount: data.amount || existing.amount,\n    currency: data.currency || existing.currency,\n    nextPaymentDate: data.nextPaymentDate,\n    lastModified: data.lastModified,\n    updatedAt: new Date().toISOString(),\n    lastWebhookId: data.webhookId,\n    lastEventType: data.eventType\n  };\n  \n  console.log(`[SUBSCRIPTION UPDATE] User: ${data.userId}, Status: ${data.internalStatus}`);\n  \n  results.push({\n    json: {\n      updated: true,\n      userId: data.userId,\n      oldStatus: existing.status || 'none',\n      newStatus: data.internalStatus,\n      subscriptionId: data.subscriptionId\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "update-subscription-status",
+      "name": "Atualizar Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1350, 200],
+      "notes": "Atualiza o status da assinatura no 'banco'.\n\nPara produção, substitua por:\n- PostgreSQL UPDATE\n- MongoDB updateOne\n- Supabase update"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// LOG DO EVENTO PROCESSADO\n// ========================================\n\nconst items = $input.all();\nconst staticData = $getWorkflowStaticData('global');\n\n// Inicializar log de eventos\nif (!staticData.webhookLogs) {\n  staticData.webhookLogs = [];\n}\n\nfor (const item of items) {\n  const logEntry = {\n    timestamp: new Date().toISOString(),\n    ...item.json\n  };\n  \n  // Manter apenas últimos 100 logs\n  staticData.webhookLogs.unshift(logEntry);\n  if (staticData.webhookLogs.length > 100) {\n    staticData.webhookLogs = staticData.webhookLogs.slice(0, 100);\n  }\n}\n\nreturn items;"
+      },
+      "id": "log-webhook-event",
+      "name": "Log Evento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1570, 200],
+      "notes": "Registra o evento processado para auditoria.\n\nMantém últimos 100 eventos em memória.\n\nPara produção, salve em banco de dados."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"received\": true, \"processed\": true } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-webhook-ok",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1790, 200],
+      "notes": "Responde 200 OK para o Mercado Pago.\n\nIMPORTANTE: Sempre responder 200\npara evitar reenvios do webhook."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// PROCESSAR OUTROS TIPOS DE WEBHOOK\n// ========================================\n\nconst items = $input.all();\n\nfor (const item of items) {\n  const { topic, eventType, resourceId } = item.json;\n  \n  console.log(`[MP WEBHOOK] Tipo não-assinatura: ${topic} - ${eventType}`);\n  \n  // Aqui você pode adicionar lógica para:\n  // - Pagamentos avulsos\n  // - Chargebacks\n  // - Disputas\n  // - etc.\n}\n\nreturn [{ json: { processed: true, type: 'non_subscription' } }];"
+      },
+      "id": "process-other-webhook",
+      "name": "Processar Outros Tipos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 420],
+      "notes": "Processa webhooks que não são de assinatura.\n\nAdicione lógica conforme necessário:\n- Pagamentos\n- Chargebacks\n- Disputas"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"received\": true, \"processed\": true } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-other-ok",
+      "name": "Responder OK (Outros)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1130, 420],
+      "notes": "Responde 200 OK para outros tipos de webhook."
+    },
+    {
+      "parameters": {
+        "content": "## 🔔 Webhook Mercado Pago\n\n### Endpoint\n```\nPOST /webhook/webhook/mercadopago\n```\n\n### Configuração no MP\n1. Acesse: Sua conta > Configurações > Notificações\n2. Cole a URL do webhook\n3. Selecione eventos:\n   - Preapproval (assinaturas)\n   - Payment (opcional)\n\n### Eventos Processados\n- `preapproval.authorized` → active\n- `preapproval.paused` → paused  \n- `preapproval.cancelled` → cancelled\n\n### Fluxo\n1. Recebe notificação\n2. Busca detalhes no MP\n3. Atualiza status do usuário\n4. Responde 200 OK",
+        "height": 420,
+        "width": 300,
+        "color": 6
+      },
+      "id": "sticky-webhook-docs",
+      "name": "Documentação",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, 160]
+    }
+  ],
+  "connections": {
+    "Webhook - MP Notificações": {
+      "main": [
+        [
+          {
+            "node": "Parsear Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Webhook": {
+      "main": [
+        [
+          {
+            "node": "É Assinatura?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É Assinatura?": {
+      "main": [
+        [
+          {
+            "node": "Buscar Detalhes Assinatura",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Processar Outros Tipos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Detalhes Assinatura": {
+      "main": [
+        [
+          {
+            "node": "Processar Status Assinatura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Status Assinatura": {
+      "main": [
+        [
+          {
+            "node": "Atualizar Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar Status": {
+      "main": [
+        [
+          {
+            "node": "Log Evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Evento": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Outros Tipos": {
+      "main": [
+        [
+          {
+            "node": "Responder OK (Outros)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": {
+    "global": {
+      "subscriptions": {},
+      "webhookLogs": []
+    }
+  },
+  "tags": [
+    {
+      "name": "mercado-pago",
+      "id": "10"
+    },
+    {
+      "name": "webhook",
+      "id": "13"
+    },
+    {
+      "name": "notification",
+      "id": "14"
+    }
+  ],
+  "triggerCount": 1,
+  "meta": {
+    "templateId": "mp-webhook-notifications",
+    "instanceId": "easypanel-n8n"
+  }
+}

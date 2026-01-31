@@ -1,0 +1,79 @@
+# ============================================
+# DOCKERIGNORE - Otimizado para builds rapidos
+# ============================================
+
+# Git
+.git
+.gitignore
+.gitattributes
+.github
+
+# Documentacao (nao necessaria na imagem)
+*.md
+LICENSE
+docs/
+
+# Ambiente e segredos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# Logs
+*.log
+logs/
+
+# Dependencias locais
+node_modules/
+vendor/
+__pycache__/
+.venv/
+venv/
+
+# IDE e editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Docker (evitar loop)
+docker-compose.override.yml
+docker-compose.local.yml
+Dockerfile.*
+!Dockerfile.frontend
+
+# Backups
+backups/
+*.backup
+*.bak
+*.sql.gz
+*.tar.gz
+
+# Testes
+tests/
+test/
+*.test.*
+coverage/
+.nyc_output/
+
+# Build artifacts
+dist/
+build/
+tmp/
+temp/
+
+# Workflows n8n (montados via volume)
+n8n_*.json
+n8n/
+
+# Scripts (nao necessarios na imagem)
+scripts/
+
+# PostgreSQL init (montado via volume)
+postgres/

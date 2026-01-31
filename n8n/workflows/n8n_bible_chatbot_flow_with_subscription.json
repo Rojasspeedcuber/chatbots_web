@@ -1,0 +1,437 @@
+{
+  "name": "Bible AI Chatbot - Web API (Com Assinatura)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat/bible",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Chat Bible API",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "bible-chat-webhook",
+      "notes": "Endpoint principal: POST /webhook/chat/bible\n\nEspera body JSON:\n{\n  \"message\": \"pergunta do usuário\",\n  \"sessionId\": \"id-unico-sessao\",\n  \"userId\": \"id-usuario\" (OBRIGATÓRIO para verificar assinatura)\n}"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// VALIDAÇÃO DE PARÂMETROS DA REQUISIÇÃO\n// ========================================\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const body = item.json.body || item.json;\n  \n  // Validar campo obrigatório: message\n  if (!body.message || typeof body.message !== 'string' || body.message.trim() === '') {\n    throw new Error('VALIDATION_ERROR: Campo \"message\" é obrigatório e deve ser uma string não vazia.');\n  }\n  \n  // Validar userId (obrigatório para sistema de assinatura)\n  if (!body.userId || typeof body.userId !== 'string' || body.userId.trim() === '') {\n    throw new Error('VALIDATION_ERROR: Campo \"userId\" é obrigatório para verificação de assinatura.');\n  }\n  \n  // Gerar sessionId se não fornecido\n  const sessionId = body.sessionId || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\n  \n  // Limitar tamanho da mensagem (segurança)\n  const maxLength = 2000;\n  const userMessage = body.message.trim().substring(0, maxLength);\n  \n  results.push({\n    json: {\n      userMessage,\n      sessionId,\n      userId: body.userId.trim(),\n      timestamp: new Date().toISOString(),\n      requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "validate-params",
+      "name": "Validar Parâmetros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300],
+      "notes": "Valida os parâmetros recebidos:\n- message (obrigatório)\n- userId (obrigatório para assinatura)\n- sessionId (gerado se não fornecido)\n\nLimita mensagem a 2000 caracteres."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// VERIFICAR ASSINATURA DO USUÁRIO\n// ========================================\n\nconst items = $input.all();\nconst staticData = $getWorkflowStaticData('global');\nconst results = [];\n\n// Configuração: permitir acesso gratuito limitado?\nconst FREE_TIER_ENABLED = false; // Altere para true para permitir uso limitado\nconst FREE_TIER_DAILY_LIMIT = 3; // Mensagens gratuitas por dia\n\nfor (const item of items) {\n  const { userId, userMessage, sessionId, timestamp, requestId } = item.json;\n  \n  // Buscar assinatura no 'banco'\n  const subscriptions = staticData.subscriptions || {};\n  const subscription = subscriptions[userId];\n  \n  // Verificar se usuário tem assinatura ativa\n  const hasActiveSubscription = subscription && \n    (subscription.status === 'active' || subscription.status === 'authorized');\n  \n  // Se FREE_TIER está habilitado, verificar limite diário\n  let canAccessFreeTier = false;\n  if (FREE_TIER_ENABLED && !hasActiveSubscription) {\n    const freeTierUsage = staticData.freeTierUsage || {};\n    const today = new Date().toISOString().split('T')[0];\n    const userUsage = freeTierUsage[userId] || { date: today, count: 0 };\n    \n    // Reset diário\n    if (userUsage.date !== today) {\n      userUsage.date = today;\n      userUsage.count = 0;\n    }\n    \n    canAccessFreeTier = userUsage.count < FREE_TIER_DAILY_LIMIT;\n    \n    if (canAccessFreeTier) {\n      // Incrementar uso\n      userUsage.count++;\n      if (!staticData.freeTierUsage) staticData.freeTierUsage = {};\n      staticData.freeTierUsage[userId] = userUsage;\n    }\n  }\n  \n  results.push({\n    json: {\n      userId,\n      userMessage,\n      sessionId,\n      timestamp,\n      requestId,\n      subscription: {\n        hasActive: hasActiveSubscription,\n        status: subscription?.status || 'none',\n        planId: subscription?.planId,\n        expiresAt: subscription?.nextPaymentDate\n      },\n      access: {\n        granted: hasActiveSubscription || canAccessFreeTier,\n        reason: hasActiveSubscription ? 'active_subscription' : \n                canAccessFreeTier ? 'free_tier' : 'no_subscription',\n        freeTierRemaining: FREE_TIER_ENABLED && !hasActiveSubscription ? \n                          (FREE_TIER_DAILY_LIMIT - (staticData.freeTierUsage?.[userId]?.count || 0)) : null\n      }\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "check-subscription",
+      "name": "Verificar Assinatura",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [690, 300],
+      "notes": "Verifica se o usuário tem assinatura ativa.\n\nConfigurações:\n- FREE_TIER_ENABLED: permite uso gratuito limitado\n- FREE_TIER_DAILY_LIMIT: mensagens gratuitas/dia\n\nRetorna acesso granted/denied com motivo."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "access-granted-condition",
+              "leftValue": "={{ $json.access.granted }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-access",
+      "name": "Acesso Permitido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [910, 300],
+      "notes": "Verifica se o acesso foi concedido.\n\nSe sim: continua para IA\nSe não: retorna erro de assinatura"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// CONSTRUÇÃO DO PROMPT COM CONTEXTO BÍBLICO\n// ========================================\n\nconst items = $input.all();\nconst results = [];\n\n// Prompt de sistema com contexto bíblico profundo\nconst BIBLE_SYSTEM_PROMPT = `Você é um assistente espiritual cristão especializado na Bíblia Sagrada. Seu papel é:\n\n## IDENTIDADE E PROPÓSITO\n- Você é um conselheiro bíblico sábio, compassivo e acolhedor\n- Seu conhecimento abrange toda a Bíblia (Antigo e Novo Testamento)\n- Você conhece profundamente teologia cristã, história bíblica e interpretação das Escrituras\n\n## DIRETRIZES DE RESPOSTA\n1. **Base Bíblica**: Sempre fundamente suas respostas nas Escrituras Sagradas\n2. **Citações**: Inclua versículos relevantes com referência (ex: João 3:16)\n3. **Contextualização**: Explique o contexto histórico e cultural quando relevante\n4. **Aplicação Prática**: Conecte os ensinamentos bíblicos com a vida cotidiana\n5. **Tom Acolhedor**: Seja gentil, empático e encorajador\n6. **Precisão**: Se não souber algo com certeza, admita humildemente\n\n## LIMITAÇÕES\n- Não faça previsões sobre o futuro ou profecias pessoais\n- Não substitua aconselhamento profissional (médico, jurídico, psicológico)\n- Não entre em debates denominacionais divisivos\n- Mantenha respeito por diferentes tradições cristãs\n\n## FORMATO DE RESPOSTA\n- Seja conciso mas completo\n- Use linguagem clara e acessível\n- Organize respostas longas em tópicos quando apropriado\n- Sempre termine com uma palavra de encorajamento ou reflexão\n\nResponda em português brasileiro de forma natural e acolhedora.`;\n\nfor (const item of items) {\n  const { userMessage, sessionId, userId, timestamp, requestId, subscription, access } = item.json;\n  \n  // Construir mensagens para a API\n  const messages = [\n    {\n      role: 'system',\n      content: BIBLE_SYSTEM_PROMPT\n    },\n    {\n      role: 'user',\n      content: userMessage\n    }\n  ];\n  \n  results.push({\n    json: {\n      messages,\n      userMessage,\n      sessionId,\n      userId,\n      timestamp,\n      requestId,\n      subscription,\n      access,\n      model: 'gpt-4o-mini',\n      maxTokens: 1500,\n      temperature: 0.7\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "build-prompt",
+      "name": "Construir Prompt Bíblico",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 200],
+      "notes": "Monta o prompt com contexto bíblico.\n\nExecutado apenas se acesso foi concedido."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": $json.model,\n  \"messages\": $json.messages,\n  \"max_tokens\": $json.maxTokens,\n  \"temperature\": $json.temperature,\n  \"presence_penalty\": 0.1,\n  \"frequency_penalty\": 0.1\n} }}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "call-openai",
+      "name": "Chamar OpenAI API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1350, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_CREDENTIAL_ID",
+          "name": "OpenAI API Key"
+        }
+      },
+      "notes": "Chamada para OpenAI Chat Completions API."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// PROCESSAR RESPOSTA DA IA\n// ========================================\n\nconst items = $input.all();\nconst inputData = $('Construir Prompt Bíblico').first().json;\nconst results = [];\n\nfor (const item of items) {\n  const response = item.json;\n  \n  if (!response.body || !response.body.choices || !response.body.choices[0]) {\n    throw new Error('AI_ERROR: Resposta inválida da API de IA');\n  }\n  \n  const aiResponse = response.body.choices[0].message.content;\n  const usage = response.body.usage || {};\n  \n  results.push({\n    json: {\n      response: aiResponse,\n      status: 'success',\n      metadata: {\n        requestId: inputData.requestId,\n        sessionId: inputData.sessionId,\n        userId: inputData.userId,\n        timestamp: inputData.timestamp,\n        responseTimestamp: new Date().toISOString(),\n        model: response.body.model || inputData.model,\n        tokensUsed: {\n          prompt: usage.prompt_tokens || 0,\n          completion: usage.completion_tokens || 0,\n          total: usage.total_tokens || 0\n        },\n        subscription: {\n          status: inputData.subscription.status,\n          accessReason: inputData.access.reason\n        }\n      }\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "process-response",
+      "name": "Processar Resposta IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1570, 200],
+      "notes": "Extrai e formata a resposta da IA.\n\nInclui informação de assinatura no metadata."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "X-Request-Id",
+                "value": "={{ $json.metadata.requestId }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-success",
+      "name": "Responder Sucesso",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1790, 200],
+      "notes": "Retorna resposta JSON de sucesso (HTTP 200)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// RESPOSTA PARA USUÁRIO SEM ASSINATURA\n// ========================================\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const { userId, requestId, timestamp, subscription, access } = item.json;\n  \n  // Mensagem personalizada baseada no status\n  let message = '';\n  let subscriptionLink = 'https://seu-site.com/assinar'; // Altere para seu link\n  \n  if (subscription.status === 'cancelled') {\n    message = 'Sua assinatura foi cancelada. Reative para continuar usando o Bible AI Chat.';\n  } else if (subscription.status === 'paused') {\n    message = 'Sua assinatura está pausada. Reative-a para continuar conversando.';\n  } else if (subscription.status === 'pending') {\n    message = 'Seu pagamento está pendente. Conclua o pagamento para acessar o chat.';\n  } else {\n    message = 'Para usar o Bible AI Chat, você precisa de uma assinatura ativa. Assine agora e tenha acesso ilimitado às conversas sobre a Bíblia!';\n  }\n  \n  results.push({\n    json: {\n      response: null,\n      status: 'subscription_required',\n      error: {\n        type: 'SUBSCRIPTION_REQUIRED',\n        message,\n        code: 402\n      },\n      subscription: {\n        required: true,\n        currentStatus: subscription.status,\n        subscriptionLink,\n        plans: [\n          { id: 'monthly', name: 'Mensal', price: 'R$ 19,90/mês' },\n          { id: 'quarterly', name: 'Trimestral', price: 'R$ 49,90/trimestre' },\n          { id: 'yearly', name: 'Anual', price: 'R$ 149,90/ano' }\n        ]\n      },\n      metadata: {\n        requestId,\n        userId,\n        timestamp\n      }\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "subscription-required-response",
+      "name": "Resposta Assinatura Necessária",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 420],
+      "notes": "Gera resposta informando que assinatura é necessária.\n\nInclui:\n- Mensagem personalizada por status\n- Link para assinar\n- Lista de planos disponíveis"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 402,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-subscription-required",
+      "name": "Responder 402",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1350, 420],
+      "notes": "Retorna HTTP 402 Payment Required.\n\nIndica que assinatura é necessária."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// TRATAMENTO DE ERROS CENTRALIZADO\n// ========================================\n\nconst error = $input.first().json;\nconst errorMessage = error.message || error.error?.message || 'Erro desconhecido';\nconst errorStack = error.stack || '';\n\nlet errorType = 'INTERNAL_ERROR';\nlet statusCode = 500;\nlet userMessage = 'Ocorreu um erro interno. Por favor, tente novamente.';\n\nif (errorMessage.includes('VALIDATION_ERROR')) {\n  errorType = 'VALIDATION_ERROR';\n  statusCode = 400;\n  userMessage = errorMessage.replace('VALIDATION_ERROR: ', '');\n} else if (errorMessage.includes('AI_ERROR')) {\n  errorType = 'AI_SERVICE_ERROR';\n  statusCode = 502;\n  userMessage = 'O serviço de IA está temporariamente indisponível. Tente novamente em alguns instantes.';\n} else if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {\n  errorType = 'TIMEOUT_ERROR';\n  statusCode = 504;\n  userMessage = 'A requisição demorou muito para ser processada. Tente novamente.';\n} else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {\n  errorType = 'AUTH_ERROR';\n  statusCode = 500;\n  userMessage = 'Erro de configuração do serviço. Contate o administrador.';\n} else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {\n  errorType = 'RATE_LIMIT_ERROR';\n  statusCode = 429;\n  userMessage = 'Muitas requisições. Aguarde alguns segundos e tente novamente.';\n}\n\nreturn [{\n  json: {\n    response: null,\n    status: 'error',\n    error: {\n      type: errorType,\n      message: userMessage,\n      code: statusCode,\n      timestamp: new Date().toISOString()\n    }\n  },\n  statusCode\n}];"
+      },
+      "id": "error-handler",
+      "name": "Tratar Erros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1350, 600],
+      "notes": "Tratamento centralizado de erros."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { response: $json.response, status: $json.status, error: $json.error } }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-error",
+      "name": "Responder Erro",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1570, 600],
+      "notes": "Retorna resposta de erro com código HTTP apropriado."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// LOG DE INTERAÇÕES\n// ========================================\n\nconst inputData = $('Processar Resposta IA').first().json;\nconst promptData = $('Construir Prompt Bíblico').first().json;\nconst staticData = $getWorkflowStaticData('global');\n\n// Inicializar logs\nif (!staticData.chatLogs) {\n  staticData.chatLogs = [];\n}\n\nconst logEntry = {\n  timestamp: new Date().toISOString(),\n  requestId: inputData.metadata.requestId,\n  sessionId: inputData.metadata.sessionId,\n  userId: inputData.metadata.userId,\n  userMessage: promptData.userMessage,\n  aiResponse: inputData.response.substring(0, 500) + (inputData.response.length > 500 ? '...' : ''),\n  tokensUsed: inputData.metadata.tokensUsed,\n  model: inputData.metadata.model,\n  subscriptionStatus: inputData.metadata.subscription.status,\n  accessReason: inputData.metadata.subscription.accessReason,\n  status: 'success'\n};\n\n// Manter últimos 500 logs\nstaticData.chatLogs.unshift(logEntry);\nif (staticData.chatLogs.length > 500) {\n  staticData.chatLogs = staticData.chatLogs.slice(0, 500);\n}\n\nconsole.log('=== BIBLE CHAT LOG ===' );\nconsole.log(JSON.stringify(logEntry, null, 2));\n\nreturn [{ json: logEntry }];"
+      },
+      "id": "log-interaction",
+      "name": "Log Interação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1790, 380],
+      "notes": "Log das interações com info de assinatura."
+    },
+    {
+      "parameters": {},
+      "id": "noop-end",
+      "name": "Fim (Log)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2010, 380],
+      "notes": "Nó final após logging."
+    },
+    {
+      "parameters": {
+        "content": "## 📖 Bible AI Chatbot - Com Assinatura\n\n### Endpoint\n`POST /webhook/chat/bible`\n\n### Body (JSON)\n```json\n{\n  \"message\": \"Pergunta sobre a Bíblia\",\n  \"userId\": \"user-123\" (OBRIGATÓRIO),\n  \"sessionId\": \"opcional\"\n}\n```\n\n### Resposta Sucesso (200)\n```json\n{\n  \"response\": \"Resposta da IA...\",\n  \"status\": \"success\",\n  \"metadata\": {\n    \"subscription\": {\n      \"status\": \"active\",\n      \"accessReason\": \"active_subscription\"\n    }\n  }\n}\n```\n\n### Resposta Assinatura (402)\n```json\n{\n  \"status\": \"subscription_required\",\n  \"error\": {...},\n  \"subscription\": {\n    \"required\": true,\n    \"subscriptionLink\": \"...\",\n    \"plans\": [...]\n  }\n}\n```",
+        "height": 560,
+        "width": 340,
+        "color": 4
+      },
+      "id": "sticky-docs",
+      "name": "Documentação",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, 120]
+    },
+    {
+      "parameters": {
+        "content": "## 🔒 Verificação de Assinatura\n\n### Fluxo\n1. Recebe requisição\n2. Valida parâmetros (userId obrigatório)\n3. Verifica assinatura no 'banco'\n4. Se ativa: continua para IA\n5. Se não: retorna 402\n\n### Free Tier (Opcional)\nConfigurado no node 'Verificar Assinatura':\n- FREE_TIER_ENABLED: true/false\n- FREE_TIER_DAILY_LIMIT: 3\n\n### Status Reconhecidos\n- `active`: acesso total\n- `pending`: pagamento pendente\n- `paused`: assinatura pausada\n- `cancelled`: cancelada\n- `none`: sem assinatura",
+        "height": 380,
+        "width": 280,
+        "color": 5
+      },
+      "id": "sticky-subscription-info",
+      "name": "Info Assinatura",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [300, 20]
+    }
+  ],
+  "connections": {
+    "Webhook - Chat Bible API": {
+      "main": [
+        [
+          {
+            "node": "Validar Parâmetros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Parâmetros": {
+      "main": [
+        [
+          {
+            "node": "Verificar Assinatura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Assinatura": {
+      "main": [
+        [
+          {
+            "node": "Acesso Permitido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acesso Permitido?": {
+      "main": [
+        [
+          {
+            "node": "Construir Prompt Bíblico",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta Assinatura Necessária",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir Prompt Bíblico": {
+      "main": [
+        [
+          {
+            "node": "Chamar OpenAI API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamar OpenAI API": {
+      "main": [
+        [
+          {
+            "node": "Processar Resposta IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Resposta IA": {
+      "main": [
+        [
+          {
+            "node": "Responder Sucesso",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Interação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resposta Assinatura Necessária": {
+      "main": [
+        [
+          {
+            "node": "Responder 402",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tratar Erros": {
+      "main": [
+        [
+          {
+            "node": "Responder Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Interação": {
+      "main": [
+        [
+          {
+            "node": "Fim (Log)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": {
+    "global": {
+      "subscriptions": {},
+      "freeTierUsage": {},
+      "chatLogs": []
+    }
+  },
+  "tags": [
+    {
+      "name": "chatbot",
+      "id": "1"
+    },
+    {
+      "name": "bible",
+      "id": "2"
+    },
+    {
+      "name": "ai",
+      "id": "3"
+    },
+    {
+      "name": "subscription",
+      "id": "11"
+    }
+  ],
+  "triggerCount": 1,
+  "meta": {
+    "templateId": "bible-ai-chatbot-subscription",
+    "instanceId": "easypanel-n8n"
+  }
+}
