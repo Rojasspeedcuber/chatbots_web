@@ -5,9 +5,9 @@
 # ============================================
 
 # Stage 1: Minificar assets
-FROM node:20-alpine AS builder
+FROM node:20 AS builder
 
-WORKDIR /build
+WORKDIR /app
 
 COPY frontend/package*.json ./
 
@@ -17,6 +17,8 @@ RUN npm install --no-audit --no-fund
 
 # Copiar arquivos HTML
 COPY frontend/ .
+
+RUN npm run minify
 
 RUN npm run build
 
