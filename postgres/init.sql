@@ -153,13 +153,27 @@ GROUP BY DATE(created_at)
 ORDER BY date DESC;
 
 -- ============================================
--- DADOS INICIAIS (opcional)
+-- DADOS INICIAIS
 -- ============================================
 
--- Comentado: Descomente para inserir dados de teste
--- INSERT INTO subscriptions (user_id, email, status, plan_id)
--- VALUES ('test_user_001', 'teste@exemplo.com', 'active', 'monthly')
--- ON CONFLICT (user_id) DO NOTHING;
+-- Admin com acesso ilimitado
+INSERT INTO subscriptions (user_id, email, status, plan_id, plan_name, amount, next_payment_date, metadata)
+VALUES (
+    'henriquer01@rojasdev.cloud',
+    'henriquer01@rojasdev.cloud',
+    'active',
+    'unlimited',
+    'Administrador - Acesso Ilimitado',
+    0.00,
+    '2099-12-31 23:59:59',
+    '{"role": "admin", "unlimited": true}'::jsonb
+)
+ON CONFLICT (user_id) DO UPDATE SET
+    status = 'active',
+    plan_id = 'unlimited',
+    plan_name = 'Administrador - Acesso Ilimitado',
+    next_payment_date = '2099-12-31 23:59:59',
+    metadata = '{"role": "admin", "unlimited": true}'::jsonb;
 
 -- ============================================
 -- GRANT PERMISSIONS
