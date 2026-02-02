@@ -31,14 +31,35 @@
     },
     {
       "parameters": {
-        "jsCode": "// ========================================\n// VERIFICAR ASSINATURA DO USUARIO\n// ========================================\n\nconst items = $input.all();\nconst staticData = $getWorkflowStaticData('global');\nconst results = [];\n\n// Configuracao: permitir acesso gratuito limitado?\nconst FREE_TIER_ENABLED = false; // Altere para true para permitir uso limitado\nconst FREE_TIER_DAILY_LIMIT = 3; // Mensagens gratuitas por dia\n\nfor (const item of items) {\n  const { userId, userMessage, sessionId, timestamp, requestId } = item.json;\n  \n  // Buscar assinatura no 'banco'\n  const subscriptions = staticData.subscriptions || {};\n  const subscription = subscriptions[userId];\n  \n  // Verificar se usuario tem assinatura ativa\n  const hasActiveSubscription = subscription && \n    (subscription.status === 'active' || subscription.status === 'authorized');\n  \n  // Se FREE_TIER esta habilitado, verificar limite diario\n  let canAccessFreeTier = false;\n  if (FREE_TIER_ENABLED && !hasActiveSubscription) {\n    const freeTierUsage = staticData.freeTierUsage || {};\n    const today = new Date().toISOString().split('T')[0];\n    const userUsage = freeTierUsage[userId] || { date: today, count: 0 };\n    \n    // Reset diario\n    if (userUsage.date !== today) {\n      userUsage.date = today;\n      userUsage.count = 0;\n    }\n    \n    canAccessFreeTier = userUsage.count < FREE_TIER_DAILY_LIMIT;\n    \n    if (canAccessFreeTier) {\n      // Incrementar uso\n      userUsage.count++;\n      if (!staticData.freeTierUsage) staticData.freeTierUsage = {};\n      staticData.freeTierUsage[userId] = userUsage;\n    }\n  }\n  \n  results.push({\n    json: {\n      userId,\n      userMessage,\n      sessionId,\n      timestamp,\n      requestId,\n      subscription: {\n        hasActive: hasActiveSubscription,\n        status: subscription?.status || 'none',\n        planId: subscription?.planId,\n        expiresAt: subscription?.nextPaymentDate\n      },\n      access: {\n        granted: hasActiveSubscription || canAccessFreeTier,\n        reason: hasActiveSubscription ? 'active_subscription' : \n                canAccessFreeTier ? 'free_tier' : 'no_subscription',\n        freeTierRemaining: FREE_TIER_ENABLED && !hasActiveSubscription ? \n                          (FREE_TIER_DAILY_LIMIT - (staticData.freeTierUsage?.[userId]?.count || 0)) : null\n      }\n    }\n  });\n}\n\nreturn results;"
+        "operation": "executeQuery",
+        "query": "SELECT user_id, email, status, plan_id, plan_name, next_payment_date, metadata FROM subscriptions WHERE user_id = $1 LIMIT 1;",
+        "options": {
+          "queryParams": "={{ [$json.userId] }}"
+        }
+      },
+      "id": "check-subscription-db",
+      "name": "Buscar Assinatura no DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [690, 300],
+      "credentials": {
+        "postgres": {
+          "id": "CONFIGURE_POSTGRES_CREDENTIAL",
+          "name": "PostgreSQL Bible DB"
+        }
+      },
+      "notes": "Busca assinatura do usuario no banco PostgreSQL."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ========================================\n// VERIFICAR ASSINATURA DO USUARIO\n// ========================================\n\n// Dados da validacao anterior\nconst inputData = $('Validar Parametros').first().json;\nconst { userId, userMessage, sessionId, timestamp, requestId } = inputData;\n\n// Resultado da busca no banco\nconst dbResults = $input.all();\nconst subscription = dbResults.length > 0 && dbResults[0].json.user_id ? dbResults[0].json : null;\n\n// Verificar se usuario tem assinatura ativa\nconst hasActiveSubscription = subscription && \n  (subscription.status === 'active' || subscription.status === 'authorized');\n\n// Verificar se e admin (acesso ilimitado)\nconst isAdmin = subscription && subscription.metadata && subscription.metadata.role === 'admin';\n\nreturn [{\n  json: {\n    userId,\n    userMessage,\n    sessionId,\n    timestamp,\n    requestId,\n    subscription: {\n      hasActive: hasActiveSubscription,\n      status: subscription?.status || 'none',\n      planId: subscription?.plan_id,\n      planName: subscription?.plan_name,\n      expiresAt: subscription?.next_payment_date,\n      isAdmin: isAdmin\n    },\n    access: {\n      granted: hasActiveSubscription,\n      reason: isAdmin ? 'admin' : hasActiveSubscription ? 'active_subscription' : 'no_subscription'\n    }\n  }\n}];"
       },
       "id": "check-subscription",
       "name": "Verificar Assinatura",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [690, 300],
-      "notes": "Verifica se o usuario tem assinatura ativa.\n\nConfiguracoes:\n- FREE_TIER_ENABLED: permite uso gratuito limitado\n- FREE_TIER_DAILY_LIMIT: mensagens gratuitas/dia\n\nRetorna acesso granted/denied com motivo."
+      "position": [910, 300],
+      "notes": "Processa resultado da busca no banco e verifica se usuario tem assinatura ativa ou e admin."
     },
     {
       "parameters": {
@@ -67,7 +88,7 @@
       "name": "Acesso Permitido?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [910, 300],
+      "position": [1130, 300],
       "notes": "Verifica se o acesso foi concedido.\n\nSe sim: continua para busca e IA\nSe nao: retorna erro de assinatura"
     },
     {
@@ -78,7 +99,7 @@
       "name": "Extrair Termos de Busca",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1130, 200],
+      "position": [1350, 200],
       "notes": "Analisa a pergunta do usuario para:\n1. Extrair palavras-chave relevantes\n2. Detectar referencias biblicas (ex: Joao 3:16)\n3. Preparar termos para busca no banco"
     },
     {
@@ -93,7 +114,7 @@
       "name": "Buscar na Biblia (PostgreSQL)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [1350, 140],
+      "position": [1570, 140],
       "credentials": {
         "postgres": {
           "id": "CONFIGURE_POSTGRES_CREDENTIAL",
@@ -114,7 +135,7 @@
       "name": "Buscar por Referencia",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [1350, 300],
+      "position": [1570, 300],
       "credentials": {
         "postgres": {
           "id": "CONFIGURE_POSTGRES_CREDENTIAL",
@@ -131,7 +152,7 @@
       "name": "Combinar Resultados",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1570, 200],
+      "position": [1790, 200],
       "notes": "Combina resultados das duas buscas e prepara o contexto biblico para a IA"
     },
     {
@@ -142,7 +163,7 @@
       "name": "Construir Prompt Biblico",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1790, 200],
+      "position": [2010, 200],
       "notes": "Monta o prompt com contexto biblico e versiculos do banco.\n\nExecutado apenas se acesso foi concedido."
     },
     {
@@ -176,7 +197,7 @@
       "name": "Chamar OpenAI API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2010, 200],
+      "position": [2230, 200],
       "credentials": {
         "httpHeaderAuth": {
           "id": "CONFIGURE_CREDENTIAL_ID",
@@ -193,7 +214,7 @@
       "name": "Processar Resposta IA",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2230, 200],
+      "position": [2450, 200],
       "notes": "Extrai e formata a resposta da IA.\n\nInclui informacao de assinatura e versiculos usados no metadata."
     },
     {
@@ -220,7 +241,7 @@
       "name": "Responder Sucesso",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [2450, 200],
+      "position": [2670, 200],
       "notes": "Retorna resposta JSON de sucesso (HTTP 200)."
     },
     {
@@ -231,7 +252,7 @@
       "name": "Resposta Assinatura Necessaria",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1130, 480],
+      "position": [1350, 480],
       "notes": "Gera resposta informando que assinatura e necessaria."
     },
     {
@@ -254,7 +275,7 @@
       "name": "Responder 402",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1350, 480],
+      "position": [1570, 480],
       "notes": "Retorna HTTP 402 Payment Required."
     },
     {
@@ -265,7 +286,7 @@
       "name": "Tratar Erros",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1790, 480],
+      "position": [2010, 480],
       "notes": "Tratamento centralizado de erros."
     },
     {
@@ -288,7 +309,7 @@
       "name": "Responder Erro",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [2010, 480],
+      "position": [2230, 480],
       "notes": "Retorna resposta de erro com codigo HTTP apropriado."
     },
     {
@@ -331,6 +352,17 @@
       ]
     },
     "Validar Parametros": {
+      "main": [
+        [
+          {
+            "node": "Buscar Assinatura no DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Assinatura no DB": {
       "main": [
         [
           {
