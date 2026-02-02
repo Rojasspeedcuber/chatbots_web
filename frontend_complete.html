@@ -842,7 +842,8 @@
             }
 
             try {
-                const response = await fetch(`${apiUrl}/webhook/subscription/status/${currentUser.userId}`);
+                const response = await fetch(`${apiUrl}/webhook/subscription/status/${currentUser.userId}?lastActiveAt=${encodeURIComponent(new Date().toISOString())}`);
+
                 const data = await response.json();
 
                 if (response.ok && data.status === 'success') {
@@ -915,9 +916,10 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
+                        userId,
+                        sessionId,
                         userId: currentUser.userId,
-                        email: currentUser.email,
-                        planType: 'monthly'
+                        lastActiveAt: new Date().toISOString()
                     }),
                 });
 
@@ -983,6 +985,7 @@
                         message,
                         sessionId,
                         userId: currentUser.userId,
+                        lastActiveAt: new Date().toISOString()
                     }),
                 });
 
