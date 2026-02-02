@@ -127,6 +127,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./postgres/02-biblia-schema.sql:/docker-entrypoint-initdb.d/02-biblia-schema.sql:ro
     networks:
       - bible-chat-network
     restart: unless-stopped
