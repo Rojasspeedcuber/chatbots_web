@@ -750,6 +750,11 @@
         let currentUser = null;
         let subscriptionData = null;
         const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        const ADMIN_EMAIL = 'henriquer01@rojasdev.cloud';
+
+        function isAdmin() {
+            return currentUser && currentUser.email === ADMIN_EMAIL;
+        }
 
         // INICIALIZAÇÃO
         document.addEventListener('DOMContentLoaded', () => {
@@ -802,6 +807,14 @@
             // Atualiza UI com dados do usuário
             document.getElementById('userEmail').textContent = currentUser.email;
             document.getElementById('userIcon').textContent = currentUser.email.charAt(0).toUpperCase();
+
+            // Mostra/oculta configurações da API baseado em permissão de admin
+            const configSection = document.querySelector('.config');
+            if (isAdmin()) {
+                configSection.style.display = 'block';
+            } else {
+                configSection.style.display = 'none';
+            }
 
             // Verifica status da assinatura
             checkSubscriptionStatus();
@@ -861,6 +874,16 @@
         function updateSubscriptionUI(status, data = null) {
             const statusBadge = document.getElementById('statusBadge');
             const statusInfo = document.getElementById('statusInfo');
+            const upgradeBtn = document.querySelector('.upgrade-btn');
+
+            // Admin sempre tem acesso ilimitado
+            if (isAdmin()) {
+                statusBadge.className = 'status-badge active';
+                statusBadge.innerHTML = '<span>👑</span> Administrador';
+                statusInfo.textContent = 'Acesso ilimitado';
+                upgradeBtn.style.display = 'none';
+                return;
+            }
 
             statusBadge.className = 'status-badge ' + status;
 
@@ -872,7 +895,7 @@
                     } else {
                         statusInfo.textContent = 'Acesso ilimitado';
                     }
-                    document.querySelector('.upgrade-btn').style.display = 'none';
+                    upgradeBtn.style.display = 'none';
                     break;
 
                 case 'pending':
@@ -884,7 +907,7 @@
                 default:
                     statusBadge.innerHTML = '<span>⚠</span> Sem assinatura';
                     statusInfo.textContent = 'Assine para acesso ilimitado';
-                    document.querySelector('.upgrade-btn').style.display = 'block';
+                    upgradeBtn.style.display = 'block';
                     break;
             }
         }
@@ -916,9 +939,9 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        userId,
-                        sessionId,
                         userId: currentUser.userId,
+                        email: currentUser.email,
+                        sessionId,
                         lastActiveAt: new Date().toISOString()
                     }),
                 });
@@ -958,8 +981,8 @@
 
             if (!message) return;
 
-            // Verifica assinatura antes de enviar
-            if (!subscriptionData || subscriptionData.status !== 'active') {
+            // Verifica assinatura antes de enviar (admin não precisa de assinatura)
+            if (!isAdmin() && (!subscriptionData || subscriptionData.status !== 'active')) {
                 showSubscriptionModal();
                 return;
             }
