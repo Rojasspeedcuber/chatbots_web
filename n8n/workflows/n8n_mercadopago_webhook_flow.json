@@ -1,5 +1,6 @@
 {
   "name": "Mercado Pago - Webhook Notificações",
+  "active": true,
   "nodes": [
     {
       "parameters": {

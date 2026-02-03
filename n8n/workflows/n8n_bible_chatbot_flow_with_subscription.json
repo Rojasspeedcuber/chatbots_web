@@ -1,5 +1,6 @@
 {
   "name": "Bible AI Chatbot - Web API (Com Assinatura + Base SQL)",
+  "active": true,
   "nodes": [
     {
       "parameters": {
