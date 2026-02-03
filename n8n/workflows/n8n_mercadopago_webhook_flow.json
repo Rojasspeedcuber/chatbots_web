@@ -4,7 +4,7 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "webhook/mercadopago",
+        "path": "mercadopago",
         "responseMode": "responseNode",
         "options": {}
       },
@@ -14,7 +14,7 @@
       "typeVersion": 2,
       "position": [250, 300],
       "webhookId": "mp-webhook",
-      "notes": "Endpoint: POST /webhook/webhook/mercadopago\n\nRecebe notificações do Mercado Pago:\n- Pagamentos\n- Assinaturas (preapproval)\n- Chargebacks\n\nConfigure este URL no painel do Mercado Pago:\nhttps://seu-n8n.easypanel.host/webhook/webhook/mercadopago"
+      "notes": "Endpoint: POST /webhook/mercadopago\n\nRecebe notificações do Mercado Pago:\n- Pagamentos\n- Assinaturas (preapproval)\n- Chargebacks\n\nConfigure este URL no painel do Mercado Pago:\nhttps://seu-n8n.easypanel.host/webhook/mercadopago"
     },
     {
       "parameters": {
@@ -161,7 +161,7 @@
     },
     {
       "parameters": {
-        "content": "## 🔔 Webhook Mercado Pago\n\n### Endpoint\n```\nPOST /webhook/webhook/mercadopago\n```\n\n### Configuração no MP\n1. Acesse: Sua conta > Configurações > Notificações\n2. Cole a URL do webhook\n3. Selecione eventos:\n   - Preapproval (assinaturas)\n   - Payment (opcional)\n\n### Eventos Processados\n- `preapproval.authorized` → active\n- `preapproval.paused` → paused  \n- `preapproval.cancelled` → cancelled\n\n### Fluxo\n1. Recebe notificação\n2. Busca detalhes no MP\n3. Atualiza status do usuário\n4. Responde 200 OK",
+        "content": "## 🔔 Webhook Mercado Pago\n\n### Endpoint\n```\nPOST /webhook/mercadopago\n```\n\n### Configuração no MP\n1. Acesse: Sua conta > Configurações > Notificações\n2. Cole a URL do webhook\n3. Selecione eventos:\n   - Preapproval (assinaturas)\n   - Payment (opcional)\n\n### Eventos Processados\n- `preapproval.authorized` → active\n- `preapproval.paused` → paused  \n- `preapproval.cancelled` → cancelled\n\n### Fluxo\n1. Recebe notificação\n2. Busca detalhes no MP\n3. Atualiza status do usuário\n4. Responde 200 OK",
         "height": 420,
         "width": 300,
         "color": 6
