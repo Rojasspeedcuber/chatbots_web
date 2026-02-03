@@ -850,14 +850,25 @@
         async function checkSubscriptionStatus() {
             const apiUrl = getApiUrl();
             if (!apiUrl) {
+                console.warn('URL da API não configurada');
                 updateSubscriptionUI('inactive');
                 return;
             }
 
             try {
-                const response = await fetch(`${apiUrl}/webhook/subscription/status/${currentUser.userId}?lastActiveAt=${encodeURIComponent(new Date().toISOString())}`);
+                const statusUrl = `${apiUrl}/webhook/subscription/status/${currentUser.userId}?lastActiveAt=${encodeURIComponent(new Date().toISOString())}`;
+                console.log('Verificando assinatura em:', statusUrl);
+
+                const response = await fetch(statusUrl);
+
+                if (!response.ok) {
+                    console.error('Erro HTTP ao verificar assinatura:', response.status);
+                    updateSubscriptionUI('inactive');
+                    return;
+                }
 
                 const data = await response.json();
+                console.log('Status da assinatura:', data);
 
                 if (response.ok && data.status === 'success') {
                     subscriptionData = data.subscription;
@@ -989,7 +1000,7 @@
 
             const apiUrl = getApiUrl();
             if (!apiUrl) {
-                alert('Configure a URL da API primeiro!');
+                addMessage('⚙️ Configure a URL da API primeiro nas "Configurações da API"!', 'error');
                 return;
             }
 
@@ -998,8 +1009,12 @@
             sendBtn.disabled = true;
             showTyping();
 
+            const requestUrl = `${apiUrl}/webhook/chat/bible`;
+            console.log('Enviando para:', requestUrl);
+            console.log('Dados:', { message, sessionId, userId: currentUser.userId, email: currentUser.email });
+
             try {
-                const response = await fetch(`${apiUrl}/webhook/chat/bible`, {
+                const response = await fetch(requestUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1013,7 +1028,14 @@
                     }),
                 });
 
+                console.log('Status da resposta:', response.status);
+
+                if (!response.ok) {
+                    throw new Error(`Erro HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 const data = await response.json();
+                console.log('Resposta:', data);
                 hideTyping();
 
                 if (data.status === 'success') {
@@ -1023,8 +1045,22 @@
                     addMessage(data.error?.message || 'Erro desconhecido', 'error');
                 }
             } catch (error) {
+                console.error('Erro completo:', error);
                 hideTyping();
-                addMessage(`Erro de conexão: ${error.message}`, 'error');
+
+                let errorMsg = 'Erro de conexão';
+                if (error.message.includes('Failed to fetch')) {
+                    errorMsg = `❌ Não foi possível conectar à API.<br><br>
+                        <strong>Verifique:</strong><br>
+                        1. URL da API está correta: <code>${apiUrl}</code><br>
+                        2. Servidor n8n está rodando<br>
+                        3. CORS está configurado no n8n<br><br>
+                        <em>Veja o console (F12) para mais detalhes</em>`;
+                } else {
+                    errorMsg = `❌ ${error.message}`;
+                }
+
+                addMessage(errorMsg, 'error');
             }
 
             sendBtn.disabled = false;

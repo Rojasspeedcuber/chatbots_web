@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:github.com)",
-      "mcp__playwright__playwright_post"
+      "mcp__playwright__playwright_post",
+      "Bash(echo:*)"
     ]
   }
 }
