@@ -29,13 +29,32 @@ except ImportError:
     print("Execute: pip install psycopg2-binary")
     sys.exit(1)
 
-# Configuracoes do banco
+# Carrega variaveis do arquivo .env se existir
+def load_env_file():
+    """Carrega variaveis do arquivo .env"""
+    env_file = Path(__file__).parent.parent / '.env'
+    if env_file.exists():
+        print(f"Carregando configuracoes de: {env_file}")
+        with open(env_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    # Nao sobrescreve variaveis ja definidas no ambiente
+                    if key not in os.environ:
+                        os.environ[key] = value
+
+load_env_file()
+
+# Configuracoes do banco (compativel com variaveis do Easypanel/Docker)
 DB_CONFIG = {
-    'host': os.getenv('POSTGRES_HOST', 'localhost'),
-    'port': int(os.getenv('POSTGRES_PORT', 5432)),
-    'database': os.getenv('POSTGRES_DB', 'n8n'),
-    'user': os.getenv('POSTGRES_USER', 'n8n'),
-    'password': os.getenv('POSTGRES_PASSWORD', 'n8n_secure_password_2025')
+    'host': os.getenv('POSTGRES_HOST') or os.getenv('DB_POSTGRESDB_HOST', 'localhost'),
+    'port': int(os.getenv('POSTGRES_PORT') or os.getenv('DB_POSTGRESDB_PORT', '5432')),
+    'dbname': os.getenv('POSTGRES_DB') or os.getenv('DB_POSTGRESDB_DATABASE', 'n8n'),
+    'user': os.getenv('POSTGRES_USER') or os.getenv('DB_POSTGRESDB_USER', 'n8n'),
+    'password': os.getenv('POSTGRES_PASSWORD') or os.getenv('DB_POSTGRESDB_PASSWORD', 'n8n_secure_password_2025')
 }
 
 # Caminho do arquivo SQL
@@ -88,7 +107,7 @@ def import_to_postgres(versiculos: list):
     """
     Importa os versiculos para o PostgreSQL
     """
-    print(f"\nConectando ao PostgreSQL: {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
+    print(f"\nConectando ao PostgreSQL: {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['dbname']}")
 
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor()

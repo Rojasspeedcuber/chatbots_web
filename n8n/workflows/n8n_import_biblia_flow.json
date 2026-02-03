@@ -1,0 +1,212 @@
+{
+  "name": "Importar Biblia - One Time Setup",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin/import-biblia",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "import-biblia-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) as total FROM versiculos;",
+        "options": {}
+      },
+      "id": "check-existing",
+      "name": "Verificar Versiculos Existentes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [470, 300],
+      "credentials": {
+        "postgres": {
+          "id": "CONFIGURE_POSTGRES_CREDENTIAL",
+          "name": "PostgreSQL Bible DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-count",
+              "leftValue": "={{ $json.total }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-if-empty",
+      "name": "Tabela Vazia?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gera os INSERTs dos livros da Biblia\n// Este node retorna os comandos SQL para inserir os livros\n\nconst livros = [\n  // Antigo Testamento\n  [1, 1, 1, 'Genesis'], [2, 1, 2, 'Exodo'], [3, 1, 3, 'Levitico'],\n  [4, 1, 4, 'Numeros'], [5, 1, 5, 'Deuteronomio'], [6, 1, 6, 'Josue'],\n  [7, 1, 7, 'Juizes'], [8, 1, 8, 'Rute'], [9, 1, 9, 'I Samuel'],\n  [10, 1, 10, 'II Samuel'], [11, 1, 11, 'I Reis'], [12, 1, 12, 'II Reis'],\n  [13, 1, 13, 'I Cronicas'], [14, 1, 14, 'II Cronicas'], [15, 1, 15, 'Esdras'],\n  [16, 1, 16, 'Neemias'], [17, 1, 17, 'Ester'], [18, 1, 18, 'Jo'],\n  [19, 1, 19, 'Salmos'], [20, 1, 20, 'Proverbios'], [21, 1, 21, 'Eclesiastes'],\n  [22, 1, 22, 'Cantico dos Canticos'], [23, 1, 23, 'Isaias'], [24, 1, 24, 'Jeremias'],\n  [25, 1, 25, 'Lamentacoes Jeremias'], [26, 1, 26, 'Ezequiel'], [27, 1, 27, 'Daniel'],\n  [28, 1, 28, 'Oseias'], [29, 1, 29, 'Joel'], [30, 1, 30, 'Amos'],\n  [31, 1, 31, 'Obadias'], [32, 1, 32, 'Jonas'], [33, 1, 33, 'Miqueias'],\n  [34, 1, 34, 'Naum'], [35, 1, 35, 'Habacuque'], [36, 1, 36, 'Sofonias'],\n  [37, 1, 37, 'Ageu'], [38, 1, 38, 'Zacarias'], [39, 1, 39, 'Malaquias'],\n  // Novo Testamento\n  [40, 2, 1, 'Mateus'], [41, 2, 2, 'Marcos'], [42, 2, 3, 'Lucas'],\n  [43, 2, 4, 'Joao'], [44, 2, 5, 'Atos'], [45, 2, 6, 'Romanos'],\n  [46, 2, 7, 'I Corintios'], [47, 2, 8, 'II Corintios'], [48, 2, 9, 'Galatas'],\n  [49, 2, 10, 'Efesios'], [50, 2, 11, 'Filipenses'], [51, 2, 12, 'Colossenses'],\n  [52, 2, 13, 'I Tessalonicenses'], [53, 2, 14, 'II Tessalonicenses'],\n  [54, 2, 15, 'I Timoteo'], [55, 2, 16, 'II Timoteo'], [56, 2, 17, 'Tito'],\n  [57, 2, 18, 'Filemom'], [58, 2, 19, 'Hebreus'], [59, 2, 20, 'Tiago'],\n  [60, 2, 21, 'I Pedro'], [61, 2, 22, 'II Pedro'], [62, 2, 23, 'I Joao'],\n  [63, 2, 24, 'II Joao'], [64, 2, 25, 'III Joao'], [65, 2, 26, 'Judas'],\n  [66, 2, 27, 'Apocalipse']\n];\n\nreturn [{ json: { livros, message: 'Livros preparados para insercao' } }];"
+      },
+      "id": "prepare-livros",
+      "name": "Preparar Livros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Criar tabelas se nao existirem\nCREATE TABLE IF NOT EXISTS testamentos (\n    tes_id SMALLINT PRIMARY KEY,\n    tes_nome VARCHAR(30) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS livros (\n    liv_id SMALLINT PRIMARY KEY,\n    liv_tes_id SMALLINT NOT NULL,\n    liv_posicao SMALLINT NOT NULL,\n    liv_nome VARCHAR(30) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS versiculos (\n    ver_id SERIAL PRIMARY KEY,\n    ver_liv_id SMALLINT NOT NULL,\n    ver_capitulo SMALLINT NOT NULL,\n    ver_versiculo SMALLINT NOT NULL,\n    ver_texto TEXT NOT NULL\n);\n\n-- Inserir testamentos\nINSERT INTO testamentos (tes_id, tes_nome) VALUES\n(1, 'Antigo Testamento'),\n(2, 'Novo Testamento')\nON CONFLICT (tes_id) DO NOTHING;\n\n-- Criar indices\nCREATE INDEX IF NOT EXISTS idx_versiculos_livro ON versiculos(ver_liv_id);\nCREATE INDEX IF NOT EXISTS idx_versiculos_capitulo ON versiculos(ver_liv_id, ver_capitulo);\nCREATE INDEX IF NOT EXISTS idx_versiculos_texto_fts ON versiculos USING gin(to_tsvector('portuguese', ver_texto));\n\nSELECT 'Schema criado com sucesso' as status;",
+        "options": {}
+      },
+      "id": "create-schema",
+      "name": "Criar Schema",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1130, 200],
+      "credentials": {
+        "postgres": {
+          "id": "CONFIGURE_POSTGRES_CREDENTIAL",
+          "name": "PostgreSQL Bible DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'info', message: 'Tabela versiculos ja contem ' + $('Verificar Versiculos Existentes').first().json.total + ' registros. Nenhuma acao necessaria.', total: $('Verificar Versiculos Existentes').first().json.total } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-already-imported",
+      "name": "Ja Importado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [910, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'success', message: 'Schema da Biblia criado. Os versiculos precisam ser importados via script Python devido ao tamanho (31000+ registros). Execute: python scripts/import_biblia.py no terminal do Easypanel.' } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-success",
+      "name": "Responder Sucesso",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1350, 200]
+    },
+    {
+      "parameters": {
+        "content": "## Importador de Biblia\n\n### Como usar:\n1. Configure a credencial PostgreSQL\n2. Faca um POST para `/webhook/admin/import-biblia`\n3. Este workflow cria o schema basico\n4. Os versiculos (31000+) devem ser importados via script Python\n\n### Importacao completa:\nNo terminal do Easypanel (servico n8n):\n```\napk add python3 py3-pip\npip3 install psycopg2-binary\npython3 /path/to/import_biblia.py\n```",
+        "height": 340,
+        "width": 320,
+        "color": 4
+      },
+      "id": "sticky-docs",
+      "name": "Documentacao",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, 160]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Verificar Versiculos Existentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Versiculos Existentes": {
+      "main": [
+        [
+          {
+            "node": "Tabela Vazia?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tabela Vazia?": {
+      "main": [
+        [
+          {
+            "node": "Preparar Livros",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ja Importado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Livros": {
+      "main": [
+        [
+          {
+            "node": "Criar Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar Schema": {
+      "main": [
+        [
+          {
+            "node": "Responder Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "admin",
+      "id": "10"
+    },
+    {
+      "name": "setup",
+      "id": "11"
+    }
+  ]
+}
